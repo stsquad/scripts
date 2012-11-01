@@ -1,6 +1,10 @@
 #!/usr/bin/python
+# -*- coding: utf-8 -*-
 #
 # uncow, a simple script to uncow files copied into a fresh btrfs subvolume
+#
+# (C)opyright 2012 Alex Bennée
+# License: GPLv3
 #
 # Usage:
 #  - create a new btrfs subvolume with nodatacow mount option
