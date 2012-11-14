@@ -29,36 +29,46 @@ from fcntl import ioctl
 
 # IOCTL constants, ganked from strace of lsattr/chattr
 FS_GET_FLAGS=0x80086601
-FS_SET_FLAGS=0x80086601
+FS_SET_FLAGS=0x40086602
 FS_NOWCOW_FL=0x00800000
 
 checked_dirs=dict()
 
-def check_and_modify_dir(verbose, path):
+def check_attributes(verbose, directory):
+    flags=array('I', [0])
+    fd=os.open(directory, os.O_DIRECTORY)
+    ioctl(fd, FS_GET_FLAGS, flags, 1)
+    if verbose: print "check_for_nowcow(%s) => %x" % (directory, flags[0])
+    os.close(fd)
+    return flags[0]
+
+def check_and_modify_dir(verbose, directory):
     """
     check directory has +C attribute, if not set it
     """
-    if dirname in checked_dirs:
+    if directory in checked_dirs:
         return
 
-    flags=array('I', [0])
-    fd=os.open(path, os.O_DIRECTORY)
-
-    ioctl(fd, FS_GET_FLAGS, flags, 1)
-    if not (flags[0] & FS_NOWCOW_FL):
-        flags[0] |= FS_NOWCOW_FL
-        if verbose: print "setting +C/%x for %s" % (flags[0], path)
+    flags=check_attributes(verbose, directory)
+    if flags & FS_NOWCOW_FL:
+        checked_dirs[directory]=1
+    else:
+        fd=os.open(directory, os.O_DIRECTORY)
+        new_flags=array('I', [flags|FS_NOWCOW_FL])
+        if verbose: print "setting +C/%x for %s" % (new_flags[0], directory)
         try:
-            ioctl(fd, FS_SET_FLAGS, flags)
-            checked_dirs[path]=1
+            ioctl(fd, FS_SET_FLAGS, new_flags)
         except:
-            print "Error setting +C for %s" % (path)
+            print "Error setting +C for %s" % (directory)
             sys.exit(-2)
+        if verbose: print "new flags now %x" % (check_attributes(verbose, directory))
 
-    os.close(fd)
+        os.close(fd)
         
 
-parser = argparse.ArgumentParser(description='Create new non-COW files with old data.')
+parser = argparse.ArgumentParser(description='Create new non-COW files with old data.',
+                                 epilog='If passed a directory instead of a file it will just make '+
+                                 'the attributes changes for new files')
 
 parser.add_argument('files', metavar='FILE', nargs='+', help='filepath to uncow')
 parser.add_argument('-v', '--verbose', action='store_true', default=False, help="Verbose output")
@@ -67,20 +77,26 @@ args = parser.parse_args()
 for p in args.files:
     absp = os.path.abspath(p)
     if os.path.exists(absp):
-        old_filename=os.path.basename(absp)
-        dirname=os.path.dirname(absp)
-        check_and_modify_dir(args.verbose, dirname)
+        if os.path.isdir(absp):
+            check_and_modify_dir(args.verbose, absp)
+        elif os.path.isfile(absp):
+            old_filename=os.path.basename(absp)
+            dirname=os.path.dirname(absp)
+            check_and_modify_dir(args.verbose, dirname)
             
-        new_filename="%s/%s-%s" % (dirname, old_filename, uuid3(NAMESPACE_URL, old_filename))
-        try:
-            if args.verbose: print "creating new file %s" % (new_filename)
-            copyfile(absp, new_filename)
-            if args.verbose: print "removing old file %s" % (absp)
-            os.unlink(absp)
-            if args.verbose: print "renaming %s to %s" % (new_filename, absp)
-            os.rename(new_filename, absp)
-        except:
-            print "error with %s, %s" % (absp, new_filename)
+            new_filename="%s/%s-%s" % (dirname, old_filename, uuid3(NAMESPACE_URL, old_filename))
+            try:
+                if args.verbose: print "creating new file %s" % (new_filename)
+                copyfile(absp, new_filename)
+                if args.verbose: print "removing old file %s" % (absp)
+                os.unlink(absp)
+                if args.verbose: print "renaming %s to %s" % (new_filename, absp)
+                os.rename(new_filename, absp)
+            except:
+                print "error with %s, %s" % (absp, new_filename)
+                exit -1
+        else:
+            print "can't operate on things that aren't directories or files (%s)" % (absp)
             exit -1
         
 
