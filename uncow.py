@@ -9,7 +9,7 @@
 # Usage:
 #  - create a new btrfs subvolume with nodatacow mount option
 #  - move all the data you want into the new subvolume
-#  - find <SPEC> | uncow.py
+#  - find <SPEC> | xargs uncow.py
 #
 # What the script does:
 #  - create a new file
