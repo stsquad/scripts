@@ -17,7 +17,7 @@ from __future__ import print_function
 
 from argparse import ArgumentParser
 import json
-import os.path as path
+import os
 
 
 def parse_arguments(options=None):
@@ -41,9 +41,9 @@ def canconicalize_files(json_cbd):
 
     for entry in json_cbd:
         fn = entry["file"]
-        if not path.isabs(fn):
+        if not os.path.isabs(fn):
             nfn = entry["directory"] + "/" + fn
-            entry["file"] = path.normpath(nfn)
+            entry["file"] = os.path.normpath(nfn)
             print("new file: %s" % (entry["file"]))
             fixed += 1
 
@@ -58,7 +58,12 @@ if __name__ == "__main__":
         (fixed, new_db) = canconicalize_files(db)
 
         if fixed > 0:
-            nf = f.name + ".fixed"
-            ndb = open(nf, "w")
+            cdb_file = f.name
+            backup_file = f.name + ".backup"
+            f.close()
+            os.rename(cdb_file, backup_file)
+            ndb = open(cdb_file, "w")
             json.dump(new_db, ndb)
             print ("Updated %d entries" % (fixed))
+        else:
+            print ("Nothing changed")
