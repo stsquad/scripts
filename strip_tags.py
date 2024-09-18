@@ -48,10 +48,10 @@ if __name__ == "__main__":
     orig_path = dirname(args.file)
 
     if args.movie_name:
-        ffmpeg_cmd += ["-map_metadata:g:Movie name", -1]
+        ffmpeg_cmd += ["-map_metadata:g:Movie name", "-1"]
 
     if args.title:
-        ffmpeg_cmd += ["-map_metadata:g:track_info_title", -1]
+        ffmpeg_cmd += ["-map_metadata:g:track_info_title", "-1"]
 
     ffmpeg_cmd += ["-c", "copy"]
 
