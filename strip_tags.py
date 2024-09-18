@@ -16,6 +16,7 @@
 import os
 from os.path import basename, dirname, join
 from argparse import ArgumentParser
+from subprocess import run
 
 
 def parse_arguments(options=None):
@@ -41,7 +42,7 @@ if __name__ == "__main__":
         print("Need to specify a file")
         exit(-1)
 
-    ffmpeg_cmd = ["ffmpeg", "-c", "copy", "-i", args.file]
+    ffmpeg_cmd = ["ffmpeg", "-i", args.file]
 
     orig_name = basename(args.file)
     orig_path = dirname(args.file)
@@ -52,9 +53,15 @@ if __name__ == "__main__":
     if args.title:
         ffmpeg_cmd += ["-map_metadata:g:track_info_title", -1]
 
+    ffmpeg_cmd += ["-c", "copy"]
+
     # local copy of file
     copy_file = join(os.getcwd(), orig_name)
 
     ffmpeg_cmd += [copy_file]
 
-    print(ffmpeg_cmd)
+    # Run ffmpeg command
+    print(f"running: {ffmpeg_cmd}")
+    res = run(ffmpeg_cmd, check=True)
+
+    print(f"result={res}")
