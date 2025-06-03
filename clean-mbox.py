@@ -1,11 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Clean mbox archive
+# Clean an mbox archive, like we get from lore.kernel.org
+#
+# (C)opyright 2025 Alex Bennée
 #
 # The archive rightly contains a bunch of metadata and alternative
 # copies of patches. But really we just want the basic facts of the
 # thread.
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
 #
 
 import mailbox
@@ -38,7 +42,8 @@ def decode_and_join(header):
                 try:
                     parts.append(part.decode(encoding or 'utf-8', errors='ignore'))
                 except UnicodeDecodeError:
-                    parts.append(part.decode('utf-8', errors='replace'))  # Try UTF-8 with replacement
+                    # Try UTF-8 with replacement
+                    parts.append(part.decode('utf-8', errors='replace'))
             else:
                 parts.append(str(part))  # Already a string
 
@@ -92,14 +97,12 @@ def sanitize_mbox_stream(mbox_path):
 
             sys.stdout.write("\n")
 
-            text_content = ""
             if message.is_multipart():
-
                 for part in message.walk():
                     if part.get_content_type() == "text/plain":
-                        _process_payload(part.get_payload(decode=True), "text/plain", part.get_charset())
+                        _process_payload(part.get_payload(decode=True),
+                                         "text/plain", part.get_charset())
                         break  # Prefer plain text
-
             else:
                 content_type = message.get_content_type()
                 payload = message.get_payload(decode=True)
@@ -116,7 +119,8 @@ def sanitize_mbox_stream(mbox_path):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Sanitize an mbox archive and output the text content to stdout.")
+    parser = argparse.ArgumentParser(description=
+                                     "Sanitize an mbox archive and output the text content to stdout.")
     parser.add_argument("mbox_file", help="Path to the mbox archive file.")
     args = parser.parse_args()
 
