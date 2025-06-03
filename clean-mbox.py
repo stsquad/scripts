@@ -12,25 +12,35 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 
+import argparse
 import mailbox
 import re
-from email.parser import Parser
-from email.header import decode_header
-
-import argparse
 import sys
+from email.header import decode_header
+from html.parser import HTMLParser
+
+# Define the arguments
+parser = argparse.ArgumentParser(
+    description="Sanitize an mbox archive and output the text content to stdout."
+)
+parser.add_argument("mbox_file", help="Path to the mbox archive file.")
 
 
-def decode_and_join(header):
-    """
-    Decodes a header string that might contain encoded parts and joins them into a single string.
+class HTMLStripper(HTMLParser):
+    """Simple HTML tag stripper."""
+    def __init__(self):
+        super().__init__()
+        self.text = []
 
-    Args:
-        header (str): The header string to decode.
+    def handle_data(self, data):
+        self.text.append(data)
 
-    Returns:
-        str: The decoded and joined header string, or an empty string if the header is None.
-    """
+    def get_text(self):
+        return ''.join(self.text)
+
+
+def decode_header_field(header):
+    """Decode email header field handling encoding properly."""
     if not header:
         return ""
 
@@ -39,89 +49,95 @@ def decode_and_join(header):
         parts = []
         for part, encoding in decoded_parts:
             if isinstance(part, bytes):
-                try:
-                    parts.append(part.decode(encoding or 'utf-8', errors='ignore'))
-                except UnicodeDecodeError:
-                    # Try UTF-8 with replacement
-                    parts.append(part.decode('utf-8', errors='replace'))
+                parts.append(part.decode(encoding or 'utf-8', errors='replace'))
             else:
-                parts.append(str(part))  # Already a string
-
+                parts.append(str(part))
         return "".join(parts)
     except Exception as e:
-        sys.stderr.write(f"Error decoding header: {e}\n")
-        return header  # Return original header on failure (best effort)
+        print(f"Warning: Error decoding header: {e}", file=sys.stderr)
+        return str(header)
 
 
+def strip_html(html_content):
+    """Remove HTML tags from content."""
+    stripper = HTMLStripper()
+    try:
+        stripper.feed(html_content)
+        return stripper.get_text()
+    except Exception:
+        # Fallback to regex if HTML parser fails
+        return re.sub(r'<[^>]+>', '', html_content)
 
-def _process_payload(payload, content_type, charset):
-    """
-    Helper function to decode and output the text content of a payload.
-    """
-    if payload:
-        try:
-            decoded_payload = payload.decode(charset or 'utf-8', errors='ignore')
-            if content_type == "text/plain":
-                sys.stdout.write(decoded_payload)
-            elif content_type == "text/html":
-                sys.stdout.write(re.sub(r'<[^>]+>', '', decoded_payload))
-        except Exception as e:
-            sys.stderr.write(f"Error decoding payload: {e}\n")
 
+def process_message_content(message):
+    """Extract and return the text content of a message."""
+    content_parts = []
+
+    if message.is_multipart():
+        # Look for text/plain first, fall back to text/html
+        plain_text = None
+        html_text = None
+
+        for part in message.walk():
+            if part.get_content_type() == "text/plain" and not plain_text:
+                payload = part.get_payload(decode=True)
+                if payload:
+                    plain_text = payload.decode(part.get_charset() or 'utf-8', errors='replace')
+            elif part.get_content_type() == "text/html" and not html_text:
+                payload = part.get_payload(decode=True)
+                if payload:
+                    html_text = payload.decode(part.get_charset() or 'utf-8', errors='replace')
+
+        content_parts.append(plain_text or strip_html(html_text or ""))
+    else:
+        # Single part message
+        payload = message.get_payload(decode=True)
+        if payload:
+            text = payload.decode(message.get_charset() or 'utf-8', errors='replace')
+            if message.get_content_type() == "text/html":
+                text = strip_html(text)
+            content_parts.append(text)
+
+    return ''.join(filter(None, content_parts))
 
 
 def sanitize_mbox_stream(mbox_path):
-    """
-    Takes an mbox archive path and yields the plain text content of each
-    email, stripped of excessive headers and HTML, directly to stdout.
-
-    Args:
-        mbox_path (str): The path to the mbox file.
-    """
+    """Process mbox file and output cleaned content."""
     try:
         mbox = mailbox.mbox(mbox_path)
-        parser = Parser()
 
-        for key, message in mbox.iteritems():
+        for message in mbox:
+            # Decode headers consistently
+            subject = decode_header_field(message.get('Subject'))
+            from_addr = decode_header_field(message.get('From'))
+            date = decode_header_field(message.get('Date'))
 
-            subject_header = message.get('Subject')
-            from_header = message.get('From')
-            date_header = message.get('Date')
+            # Print headers
+            if subject:
+                print(f"Subject: {subject}")
+            if from_addr:
+                print(f"From: {from_addr}")
+            if date:
+                print(f"Date: {date}")
 
-            if subject_header:
-                sys.stdout.write(f"Subject: {subject_header}\n")
-            if from_header:
-                sys.stdout.write(f"From: {decode_and_join(from_header)}\n")
-            if date_header:
-                sys.stdout.write(f"Date: {date_header}\n")
+            print()  # Blank line after headers
 
-            sys.stdout.write("\n")
+            # Process and print content
+            content = process_message_content(message)
+            if content.strip():  # Only print if there's actual content
+                print(content.rstrip())
 
-            if message.is_multipart():
-                for part in message.walk():
-                    if part.get_content_type() == "text/plain":
-                        _process_payload(part.get_payload(decode=True),
-                                         "text/plain", part.get_charset())
-                        break  # Prefer plain text
-            else:
-                content_type = message.get_content_type()
-                payload = message.get_payload(decode=True)
-                _process_payload(payload, content_type, message.get_charset())
-
-            sys.stdout.write("\n---\n")  # Separator for easier reading
+            print("---")  # Message separator
 
     except FileNotFoundError:
-        sys.stderr.write(f"Error: File not found at {mbox_path}\n")
+        print(f"Error: File not found at {mbox_path}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
-        sys.stderr.write(f"An error occurred: {e}\n")
+        print(f"An error occurred: {e}", file=sys.stderr)
         sys.exit(1)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=
-                                     "Sanitize an mbox archive and output the text content to stdout.")
-    parser.add_argument("mbox_file", help="Path to the mbox archive file.")
     args = parser.parse_args()
 
     sanitize_mbox_stream(args.mbox_file)
