@@ -79,9 +79,12 @@ def sanitize_mbox_stream(mbox_path):
 
         for key, message in mbox.iteritems():
 
+            subject_header = message.get('Subject')
             from_header = message.get('From')
             date_header = message.get('Date')
 
+            if subject_header:
+                sys.stdout.write(f"Subject: {subject_header}\n")
             if from_header:
                 sys.stdout.write(f"From: {decode_and_join(from_header)}\n")
             if date_header:
